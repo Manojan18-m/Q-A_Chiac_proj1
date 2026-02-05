@@ -1,4 +1,4 @@
-# Q&A Platform - Mini StackOverflow Clone
+# Q&A Platform - Mini StackOverflow 
 
 A web-based Q&A platform built with Flask that allows users to ask questions, post answers, and interact through voting and tagging systems.
 
