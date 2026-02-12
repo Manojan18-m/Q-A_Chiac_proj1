@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
-from flask_wtf import FlaskForm
+from flask_wtf import FlaskForm, CSRFProtect
 from wtforms import StringField, TextAreaField, PasswordField, SubmitField, SelectField
 from wtforms.validators import DataRequired, Length, EqualTo, Email
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -9,10 +9,21 @@ from datetime import datetime
 import os
 import re
 
+# Import AI features
+from ai_features import AIRecommendationEngine, SmartSearchEngine, ContentAnalyzer
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///qa_platform.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
+app.config['WTF_CSRF_ENABLED'] = True
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -34,9 +45,50 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(120), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # Reputation system
+    reputation = db.Column(db.Integer, default=1)
+    badge_level = db.Column(db.String(20), default='Beginner')
+    profile_views = db.Column(db.Integer, default=0)
+    
     questions = db.relationship('Question', backref='author', lazy=True)
     answers = db.relationship('Answer', backref='author', lazy=True)
     votes = db.relationship('Vote', backref='user', lazy=True)
+    badges = db.relationship('UserBadge', backref='user', lazy=True)
+    
+    def calculate_reputation(self):
+        """Calculate user reputation based on activity"""
+        score = 1  # Base reputation
+        
+        # Points for questions
+        score += len(self.questions) * 5
+        
+        # Points for answers
+        score += len(self.answers) * 10
+        
+        # Points for accepted answers
+        accepted_answers = len([a for a in self.answers if a.is_accepted])
+        score += accepted_answers * 15
+        
+        # Points for votes received
+        question_votes = sum(v.value for q in self.questions for v in q.votes if v.value > 0)
+        answer_votes = sum(v.value for a in self.answers for v in a.votes if v.value > 0)
+        score += (question_votes + answer_votes) * 2
+        
+        return max(score, 1)
+    
+    def update_badge_level(self):
+        """Update user badge based on reputation"""
+        rep = self.reputation
+        if rep >= 1000:
+            self.badge_level = 'Expert'
+        elif rep >= 500:
+            self.badge_level = 'Advanced'
+        elif rep >= 100:
+            self.badge_level = 'Intermediate'
+        elif rep >= 50:
+            self.badge_level = 'Apprentice'
+        else:
+            self.badge_level = 'Beginner'
 
 class Question(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -75,6 +127,35 @@ question_tags = db.Table('question_tags',
     db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'), primary_key=True)
 )
 
+# Badge system models
+class Badge(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    icon = db.Column(db.String(50), default='🏆')
+    requirement_type = db.Column(db.String(20), nullable=False)  # questions, answers, votes, reputation
+    requirement_value = db.Column(db.Integer, nullable=False)
+    
+    user_badges = db.relationship('UserBadge', backref='badge', lazy=True)
+
+class UserBadge(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    badge_id = db.Column(db.Integer, db.ForeignKey('badge.id'), nullable=False)
+    earned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (db.UniqueConstraint('user_id', 'badge_id'),)
+
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    notification_type = db.Column(db.String(20), default='info')  # info, success, warning, achievement
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    user = db.relationship('User', backref=db.backref('notifications', lazy=True, cascade='all, delete-orphan'))
+
 # Forms
 class LoginForm(FlaskForm):
     username = StringField('Username', validators=[DataRequired()])
@@ -106,12 +187,46 @@ class SearchForm(FlaskForm):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# Initialize AI engines (will be created when needed)
+ai_engine = None
+smart_search = None
+content_analyzer = None
+
+def get_ai_engines():
+    """Lazy initialization of AI engines"""
+    global ai_engine, smart_search, content_analyzer
+    if ai_engine is None:
+        ai_engine = AIRecommendationEngine()
+        smart_search = SmartSearchEngine()
+        content_analyzer = ContentAnalyzer()
+    return ai_engine, smart_search, content_analyzer
+
 # Routes
 @app.route('/')
 def index():
     search_form = SearchForm()
+    
+    # Get AI engines
+    ai_engine, smart_search, content_analyzer = get_ai_engines()
+    
+    # Get personalized recommendations for logged-in users
+    recommended_questions = []
+    trending_topics = []
+    
+    if current_user.is_authenticated:
+        recommended_questions = ai_engine.recommend_questions_for_user(current_user.id, limit=5)
+    
+    # Get trending topics
+    trending_topics = smart_search.get_trending_topics(days=7, limit=5)
+    
+    # Get all questions
     questions = Question.query.order_by(Question.created_at.desc()).all()
-    return render_template('index.html', questions=questions, search_form=search_form)
+    
+    return render_template('index.html', 
+                         questions=questions, 
+                         search_form=search_form,
+                         recommended_questions=recommended_questions,
+                         trending_topics=trending_topics)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -121,11 +236,20 @@ def login():
     form = LoginForm()
     if form.validate_on_submit():
         user = User.query.filter_by(username=form.username.data).first()
+        
+        # Debug information (remove in production)
+        print(f"Login attempt for username: {form.username.data}")
+        print(f"User found: {user is not None}")
+        
+        if user:
+            print(f"Password check result: {check_password_hash(user.password_hash, form.password.data)}")
+        
         if user and check_password_hash(user.password_hash, form.password.data):
             login_user(user)
             flash('Login successful!', 'success')
             return redirect(url_for('index'))
-        flash('Invalid username or password', 'danger')
+        else:
+            flash('Invalid username or password', 'danger')
     
     return render_template('login.html', form=form)
 
@@ -193,6 +317,11 @@ def question_detail(id):
     question = Question.query.get_or_404(id)
     form = AnswerForm()
     
+    # Increment profile views
+    if question.author:
+        question.author.profile_views += 1
+        db.session.commit()
+    
     # Calculate vote counts
     question_votes = sum(vote.value for vote in question.votes)
     
@@ -205,11 +334,22 @@ def question_detail(id):
     # Sort answers: accepted first, then by vote count
     answers_with_votes.sort(key=lambda x: (not x[0].is_accepted, -x[1]))
     
+    # Get AI engines and AI-powered features
+    ai_engine, smart_search, content_analyzer = get_ai_engines()
+    
+    # Get AI-powered similar questions
+    similar_questions = ai_engine.get_similar_questions(id, limit=3)
+    
+    # Analyze question quality
+    quality_score = content_analyzer.analyze_question_quality(question)
+    
     return render_template('question_detail.html', 
                          question=question, 
                          form=form, 
                          question_votes=question_votes,
-                         answers_with_votes=answers_with_votes)
+                         answers_with_votes=answers_with_votes,
+                         similar_questions=similar_questions,
+                         quality_score=quality_score)
 
 @app.route('/answer/<int:question_id>', methods=['POST'])
 @login_required
@@ -233,9 +373,12 @@ def post_answer(question_id):
 @login_required
 def vote():
     data = request.get_json()
-    item_type = data.get('type')  # 'question' or 'answer'
-    item_id = data.get('id')
+    item_type = data.get('item_type')  # 'question' or 'answer'
+    item_id = data.get('item_id')
     value = data.get('value')  # 1 or -1
+    
+    if not all([item_type, item_id, value is not None]):
+        return jsonify({'success': False, 'error': 'Missing required fields'}), 400
     
     if item_type == 'question':
         existing_vote = Vote.query.filter_by(
@@ -281,7 +424,7 @@ def vote():
         answer = Answer.query.get(item_id)
         vote_count = sum(vote.value for vote in answer.votes)
     
-    return jsonify({'vote_count': vote_count})
+    return jsonify({'success': True, 'vote_count': vote_count})
 
 @app.route('/accept_answer/<int:answer_id>', methods=['POST'])
 @login_required
@@ -308,26 +451,108 @@ def accept_answer(answer_id):
 def search():
     form = SearchForm()
     questions = []
+    search_time = 0
     
     if form.validate_on_submit() or request.args.get('q'):
+        import time
+        start_time = time.time()
+        
         query = request.args.get('q') or form.query.data
         
-        # Search by title and content
-        questions = Question.query.filter(
-            db.or_(
-                Question.title.contains(query),
-                Question.content.contains(query)
-            )
-        ).all()
+        # Get AI engines and use smart search
+        ai_engine, smart_search, content_analyzer = get_ai_engines()
         
-        # Search by tags
-        tag_questions = Question.query.join(Question.tags).filter(Tag.name.contains(query)).all()
-        questions = list(set(questions + tag_questions))  # Remove duplicates
+        if current_user.is_authenticated:
+            questions = smart_search.search_questions(query, current_user.id, limit=20)
+        else:
+            questions = smart_search.search_questions(query, limit=20)
+        
+        search_time = round((time.time() - start_time) * 1000, 2)  # in milliseconds
         
         # Sort by creation date
         questions.sort(key=lambda x: x.created_at, reverse=True)
     
-    return render_template('search_results.html', questions=questions, form=form, query=request.args.get('q', ''))
+    return render_template('search_results.html', questions=questions, form=form, query=request.args.get('q', ''), search_time=search_time)
+
+# AI-powered routes
+@app.route('/api/similar_questions/<int:question_id>')
+def similar_questions(question_id):
+    """API endpoint for getting similar questions"""
+    ai_engine, smart_search, content_analyzer = get_ai_engines()
+    similar = ai_engine.get_similar_questions(question_id, limit=5)
+    return jsonify([{
+        'id': q.id,
+        'title': q.title,
+        'url': url_for('question_detail', id=q.id)
+    } for q in similar])
+
+@app.route('/api/suggest_tags')
+def suggest_tags():
+    """API endpoint for suggesting tags based on content"""
+    title = request.args.get('title', '')
+    content = request.args.get('content', '')
+    
+    ai_engine, smart_search, content_analyzer = get_ai_engines()
+    suggested = content_analyzer.suggest_tags(title, content, limit=5)
+    return jsonify([{
+        'name': tag.name,
+        'id': tag.id
+    } for tag in suggested])
+
+@app.route('/api/trending_topics')
+def trending_topics():
+    """API endpoint for trending topics"""
+    ai_engine, smart_search, content_analyzer = get_ai_engines()
+    trending = smart_search.get_trending_topics(days=7, limit=10)
+    return jsonify([{
+        'tag': topic['tag'].name,
+        'activity_count': topic['activity_count'],
+        'sample_questions': [{
+            'id': q.id,
+            'title': q.title,
+            'url': url_for('question_detail', id=q.id)
+        } for q in topic['sample_questions']]
+    } for topic in trending])
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    """Enhanced user dashboard with analytics"""
+    user = current_user
+    
+    # Update user reputation and badge
+    user.reputation = user.calculate_reputation()
+    user.update_badge_level()
+    db.session.commit()
+    
+    # User statistics
+    stats = {
+        'questions_asked': len(user.questions),
+        'answers_given': len(user.answers),
+        'accepted_answers': len([a for a in user.answers if a.is_accepted]),
+        'reputation': user.reputation,
+        'badge_level': user.badge_level,
+        'profile_views': user.profile_views
+    }
+    
+    # Recent activity
+    recent_questions = Question.query.filter_by(user_id=user.id).order_by(Question.created_at.desc()).limit(5).all()
+    recent_answers = Answer.query.filter_by(user_id=user.id).order_by(Answer.created_at.desc()).limit(5).all()
+    
+    # Badges
+    user_badges = UserBadge.query.filter_by(user_id=user.id).order_by(UserBadge.earned_at.desc()).all()
+    
+    # Get AI engines and recommended questions
+    ai_engine, smart_search, content_analyzer = get_ai_engines()
+    recommended = ai_engine.recommend_questions_for_user(user.id, limit=10)
+    
+    return render_template('dashboard.html', 
+                         user=user, 
+                         stats=stats,
+                         recent_questions=recent_questions,
+                         recent_answers=recent_answers,
+                         user_badges=user_badges,
+                         recommended_questions=recommended)
 
 if __name__ == '__main__':
     with app.app_context():

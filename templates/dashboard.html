@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Q&A Platform{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="fas fa-chart-line"></i> Analytics Dashboard
+                <small class="text-muted">Welcome back, {{ user.username }}!</small>
+            </h1>
+        </div>
+    </div>
+
+    <!-- User Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-primary">{{ stats.questions_asked }}</h5>
+                    <p class="card-text">Questions Asked</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-success">{{ stats.answers_given }}</h5>
+                    <p class="card-text">Answers Given</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-info">{{ stats.accepted_answers }}</h5>
+                    <p class="card-text">Accepted Answers</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title text-warning">{{ stats.reputation }}</h5>
+                    <p class="card-text">Reputation Points</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Level and Badges -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-trophy"></i> Your Level</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="badge-level me-3">
+                            <span class="badge">{{ user.badge_level }}</span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6>{{ user.badge_level }}</h6>
+                            <div class="progress" style="height: 10px;">
+                                <div class="progress-bar bg-warning" role="progressbar" 
+                                     style="width: {{ ((stats.reputation / 1000) * 100) if stats.reputation < 1000 else 100 }}%">
+                                </div>
+                            </div>
+                            <small class="text-muted">{{ stats.reputation }} / 1000 to Expert</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-medal"></i> Recent Badges</h5>
+                </div>
+                <div class="card-body">
+                    {% if user_badges %}
+                        {% for badge in user_badges[:5] %}
+                        <div class="d-flex align-items-center mb-2">
+                            <span class="badge-icon me-2">{{ badge.badge.icon }}</span>
+                            <div>
+                                <strong>{{ badge.badge.name }}</strong>
+                                <br>
+                                <small class="text-muted">{{ badge.earned_at.strftime('%b %d, %Y') }}</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No badges earned yet. Start participating to earn badges!</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-bar"></i> Activity Overview</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="activity-chart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-line"></i> Reputation Progress</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="reputation-chart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-question-circle"></i> Recent Questions</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_questions %}
+                        {% for question in recent_questions %}
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                            <div>
+                                <a href="{{ url_for('question_detail', id=question.id) }}" class="text-decoration-none">
+                                    {{ question.title[:50] }}{% if question.title|length > 50 %}...{% endif %}
+                                </a>
+                                <br>
+                                <small class="text-muted">{{ question.created_at.strftime('%b %d, %Y') }} • {{ question.answers|length }} answers</small>
+                            </div>
+                            <div class="text-end">
+                                <small class="text-muted">{{ question.votes|sum(attribute='value') if question.votes else 0 }} votes</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No questions yet. <a href="{{ url_for('ask_question') }}">Ask your first question!</a></p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-comments"></i> Recent Answers</h5>
+                </div>
+                <div class="card-body">
+                    {% if recent_answers %}
+                        {% for answer in recent_answers %}
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                            <div>
+                                <a href="{{ url_for('question_detail', id=answer.question.id) }}" class="text-decoration-none">
+                                    {{ answer.question.title[:50] }}{% if answer.question.title|length > 50 %}...{% endif %}
+                                </a>
+                                <br>
+                                <small class="text-muted">{{ answer.created_at.strftime('%b %d, %Y') }}</small>
+                                {% if answer.is_accepted %}
+                                <span class="badge bg-success ms-1">Accepted</span>
+                                {% endif %}
+                            </div>
+                            <div class="text-end">
+                                <small class="text-muted">{{ answer.votes|sum(attribute='value') if answer.votes else 0 }} votes</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted">No answers yet. Start helping others by answering questions!</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recommended Questions -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-lightbulb"></i> Recommended for You</h5>
+                    <small class="text-muted">AI-powered recommendations based on your interests</small>
+                </div>
+                <div class="card-body">
+                    {% if recommended_questions %}
+                        <div class="row">
+                            {% for question in recommended_questions[:6] %}
+                            <div class="col-md-6 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title">
+                                            <a href="{{ url_for('question_detail', id=question.id) }}" class="text-decoration-none">
+                                                {{ question.title[:60] }}{% if question.title|length > 60 %}...{% endif %}
+                                            </a>
+                                        </h6>
+                                        <p class="card-text text-muted small">
+                                            {{ question.content[:100] }}{% if question.content|length > 100 %}...{% endif %}
+                                        </p>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                {% for tag in question.tags[:3] %}
+                                                <span class="badge bg-secondary">{{ tag.name }}</span>
+                                                {% endfor %}
+                                            </div>
+                                            <small class="text-muted">{{ question.created_at.strftime('%b %d') }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="text-muted">No recommendations available yet. Participate more to get personalized recommendations!</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize charts when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Activity Chart
+    const activityCtx = document.getElementById('activity-chart');
+    if (activityCtx) {
+        new Chart(activityCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Questions', 'Answers', 'Votes', 'Badges'],
+                datasets: [{
+                    label: 'Your Activity',
+                    data: [{{ stats.questions_asked }}, {{ stats.answers_given }}, {{ user.votes|length }}, {{ user_badges|length }}],
+                    backgroundColor: [
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(75, 192, 192, 0.8)',
+                        'rgba(255, 206, 86, 0.8)',
+                        'rgba(153, 102, 255, 0.8)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+
+    // Reputation Chart
+    const reputationCtx = document.getElementById('reputation-chart');
+    if (reputationCtx) {
+        new Chart(reputationCtx, {
+            type: 'line',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                datasets: [{
+                    label: 'Reputation',
+                    data: [50, 100, 150, 200, 250, {{ stats.reputation }}],
+                    borderColor: 'rgba(255, 193, 7, 1)',
+                    backgroundColor: 'rgba(255, 193, 7, 0.2)',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
