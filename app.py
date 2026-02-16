@@ -226,6 +226,16 @@ class AnswerForm(FlaskForm):
     content = TextAreaField('Your Answer', validators=[DataRequired()])
     submit = SubmitField('Post Answer')
 
+class SettingsForm(FlaskForm):
+    email = StringField('Email', validators=[DataRequired(), Email()])
+    current_password = PasswordField('Current Password')
+    new_password = PasswordField('New Password', validators=[
+        Length(min=8, message='Password must be at least 8 characters long'),
+        EqualTo('confirm_password', message='Passwords must match')
+    ])
+    confirm_password = PasswordField('Confirm New Password')
+    submit = SubmitField('Update Settings')
+
 class SearchForm(FlaskForm):
     query = StringField('Search', validators=[DataRequired()])
     submit = SubmitField('Search')
@@ -521,13 +531,109 @@ def search():
     
     return render_template('search_results.html', questions=questions, form=form, query=request.args.get('q', ''), search_time=search_time)
 
+@app.route('/profile/<username>')
+def user_profile(username):
+    """View user profile page"""
+    user = User.query.filter_by(username=username).first_or_404()
+    
+    # Update user reputation and badge
+    user.reputation = user.calculate_reputation()
+    user.update_badge_level()
+    db.session.commit()
+    
+    # Get user's questions and answers
+    questions = Question.query.filter_by(user_id=user.id).order_by(Question.created_at.desc()).limit(10).all()
+    answers = Answer.query.filter_by(user_id=user.id).order_by(Answer.created_at.desc()).limit(10).all()
+    
+    # Calculate statistics
+    stats = {
+        'questions_asked': len(user.questions),
+        'answers_given': len(user.answers),
+        'accepted_answers': len([a for a in user.answers if a.is_accepted]),
+        'reputation': user.reputation,
+        'badge_level': user.badge_level,
+        'profile_views': user.profile_views,
+        'joined_date': user.created_at.strftime('%B %Y')
+    }
+    
+    return render_template('profile.html', 
+                         profile_user=user,
+                         questions=questions,
+                         answers=answers,
+                         stats=stats)
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    """User settings page"""
+    form = SettingsForm()
+    
+    if form.validate_on_submit():
+        # Update user information
+        current_user.email = form.email.data
+        
+        # Update password if provided
+        if form.current_password.data and form.new_password.data:
+            if current_user.check_password(form.current_password.data):
+                current_user.set_password(form.new_password.data)
+                flash('Password updated successfully!', 'success')
+            else:
+                flash('Current password is incorrect!', 'error')
+                return render_template('settings.html', form=form)
+        
+        db.session.commit()
+        flash('Settings updated successfully!', 'success')
+        return redirect(url_for('settings'))
+    
+    # Pre-fill form with current data
+    form.email.data = current_user.email
+    
+    return render_template('settings.html', form=form)
+
+@app.route('/delete_account', methods=['POST'])
+@login_required
+def delete_account():
+    """Delete user account"""
+    if request.method == 'POST':
+        # Get confirmation
+        confirmation = request.form.get('confirmation')
+        
+        if confirmation and confirmation.lower() == 'delete my account':
+            # Delete user's questions, answers, and votes
+            user = current_user
+            
+            # Delete votes first
+            Vote.query.filter_by(user_id=user.id).delete()
+            
+            # Delete answers
+            Answer.query.filter_by(user_id=user.id).delete()
+            
+            # Delete questions
+            Question.query.filter_by(user_id=user.id).delete()
+            
+            # Delete user badges
+            UserBadge.query.filter_by(user_id=user.id).delete()
+            
+            # Delete user
+            db.session.delete(user)
+            db.session.commit()
+            
+            logout_user()
+            flash('Your account has been deleted successfully.', 'info')
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid confirmation. Please type "delete my account" to confirm.', 'danger')
+            return redirect(url_for('settings'))
+    
+    return redirect(url_for('settings'))
+
 @app.route('/dashboard')
 @login_required
 def dashboard():
     """Enhanced user dashboard with analytics"""
     user = current_user
     
-    # Update user reputation and badge
+    # ... (rest of the code remains the same)
     user.reputation = user.calculate_reputation()
     user.update_badge_level()
     db.session.commit()
@@ -546,8 +652,11 @@ def dashboard():
     recent_questions = Question.query.filter_by(user_id=user.id).order_by(Question.created_at.desc()).limit(5).all()
     recent_answers = Answer.query.filter_by(user_id=user.id).order_by(Answer.created_at.desc()).limit(5).all()
     
-    # Badges
-    user_badges = UserBadge.query.filter_by(user_id=user.id).order_by(UserBadge.earned_at.desc()).all()
+    # Badges (check if UserBadge table exists)
+    try:
+        user_badges = UserBadge.query.filter_by(user_id=user.id).order_by(UserBadge.earned_at.desc()).all()
+    except:
+        user_badges = []
     
     # Get AI engines and recommended questions
     ai_engine, smart_search, content_analyzer = get_ai_engines()
