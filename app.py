@@ -89,6 +89,14 @@ class User(UserMixin, db.Model):
             self.badge_level = 'Apprentice'
         else:
             self.badge_level = 'Beginner'
+    
+    def set_password(self, password):
+        """Set password hash"""
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        """Check password against hash"""
+        return check_password_hash(self.password_hash, password)
 
 class Question(db.Model):
     id = db.Column(db.Integer, primary_key=True)
