@@ -1,0 +1,32 @@
+services:
+  # Web Service
+  - type: web
+    name: qa-platform
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SQLALCHEMY_DATABASE_URI
+        value: postgresql://render_user:password@host:port/database
+    disk:
+      name: qa-platform-data
+      mountPath: /var/lib/postgresql/data
+    healthCheckPath: /
+    healthCheckTimeout: 100
+
+  # PostgreSQL Database
+  - type: pserv
+    name: qa-platform-db
+    databaseName: qa_platform
+    user: render_user
+    plan: free
+    region: oregon
+    ipAllowList: []  # Only allow internal connections
+
+version: "1"

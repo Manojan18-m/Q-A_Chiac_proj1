@@ -13,14 +13,17 @@ import re
 from ai_features import AIRecommendationEngine, SmartSearchEngine, ContentAnalyzer
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///qa_platform.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here-change-in-production')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///qa_platform.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
 }
 app.config['WTF_CSRF_ENABLED'] = True
+
+# Get port from environment (Render uses port 10000)
+port = int(os.environ.get('PORT', 5001))
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
@@ -826,4 +829,4 @@ if __name__ == '__main__':
             
             print('Sample data added successfully!')
     
-    app.run(debug=True, port=5001)
+    app.run(debug=False, host='0.0.0.0', port=port)
