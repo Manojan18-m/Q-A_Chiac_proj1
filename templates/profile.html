@@ -1,6 +1,5 @@
 {% extends "base.html" %}
 
-<<<<<<< HEAD
 {% block title %}{{ profile_user.username }} - Profile - Q&A Platform{% endblock %}
 
 {% block content %}
@@ -29,102 +28,52 @@
                 <div class="card-body">
                     <div class="row text-center">
                         <div class="col-6 mb-3">
-                            <div class="stat-number">{{ stats.questions_asked }}</div>
-                            <div class="stat-label">Questions</div>
+                            <h4 class="text-primary">{{ stats.questions_asked }}</h4>
+                            <small class="text-muted">Questions</small>
                         </div>
                         <div class="col-6 mb-3">
-                            <div class="stat-number">{{ stats.answers_given }}</div>
-                            <div class="stat-label">Answers</div>
+                            <h4 class="text-success">{{ stats.answers_given }}</h4>
+                            <small class="text-muted">Answers</small>
                         </div>
                         <div class="col-6 mb-3">
-                            <div class="stat-number">{{ stats.accepted_answers }}</div>
-                            <div class="stat-label">Accepted</div>
+                            <h4 class="text-info">{{ stats.accepted_answers }}</h4>
+                            <small class="text-muted">Accepted</small>
                         </div>
                         <div class="col-6 mb-3">
-                            <div class="stat-number">{{ stats.reputation }}</div>
-                            <div class="stat-label">Reputation</div>
-=======
-{% block title %}{{ profile_user.username }} - Profile{% endblock %}
-
-{% block content %}
-<div class="row">
-    <div class="col-md-12">
-        <!-- User Profile Header -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col-md-2 text-center">
-                        <div class="user-avatar mb-3">
-                            <i class="fas fa-user fa-4x text-primary"></i>
-                        </div>
-                    </div>
-                    <div class="col-md-10">
-                        <h2 class="mb-1">{{ profile_user.username }}</h2>
-                        <p class="text-muted mb-2">{{ profile_user.email }}</p>
-                        
-                        <!-- User Stats -->
-                        <div class="row mb-3">
-                            <div class="col-md-3 col-6 mb-2">
-                                <div class="text-center">
-                                    <div class="stat-number">{{ stats.questions_asked }}</div>
-                                    <div class="stat-label">Questions</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3 col-6 mb-2">
-                                <div class="text-center">
-                                    <div class="stat-number">{{ stats.answers_given }}</div>
-                                    <div class="stat-label">Answers</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3 col-6 mb-2">
-                                <div class="text-center">
-                                    <div class="stat-number">{{ stats.accepted_answers }}</div>
-                                    <div class="stat-label">Accepted</div>
-                                </div>
-                            </div>
-                            <div class="col-md-3 col-6 mb-2">
-                                <div class="text-center">
-                                    <div class="stat-number">{{ stats.reputation }}</div>
-                                    <div class="stat-label">Reputation</div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Badge and Join Date -->
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <span class="badge bg-primary">{{ stats.badge_level }}</span>
-                                <span class="text-muted ms-2">Joined {{ stats.joined_date }}</span>
-                            </div>
-                            <div class="text-muted">
-                                <i class="fas fa-eye"></i> {{ stats.profile_views }} profile views
-                            </div>
->>>>>>> manojan/main
+                            <h4 class="text-warning">{{ stats.reputation_points }}</h4>
+                            <small class="text-muted">Reputation</small>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
 
-<<<<<<< HEAD
         <div class="col-lg-8">
-            <!-- Recent Questions -->
+            <!-- User's Questions -->
             <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-question-circle"></i> Recent Questions</h5>
+                    <h5 class="mb-0"><i class="fas fa-question-circle"></i> Questions Asked</h5>
                 </div>
                 <div class="card-body">
-                    {% if questions %}
-                        {% for question in questions %}
-                        <div class="question-item mb-3 pb-3 border-bottom">
-                            <h6 class="question-title">
+                    {% if user_questions %}
+                        {% for question in user_questions %}
+                        <div class="question-preview mb-3">
+                            <h6>
                                 <a href="{{ url_for('question_detail', id=question.id) }}" class="text-decoration-none">
                                     {{ question.title }}
                                 </a>
                             </h6>
-                            <div class="question-meta text-muted small">
-                                <i class="fas fa-clock"></i> {{ question.created_at.strftime('%b %d, %Y') }} •
-                                <i class="fas fa-comment"></i> {{ question.answers|length }} answers
+                            <p class="text-muted small">
+                                {{ question.content|clean_html|truncate(150)|nl2br|safe }}
+                            </p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    <i class="fas fa-calendar"></i> {{ question.created_at.strftime('%b %d, %Y') }}
+                                </small>
+                                <div>
+                                    <span class="badge bg-secondary">{{ question.answers|length }} answers</span>
+                                    <span class="badge bg-primary">{{ question.votes|sum(attribute='value') if question.votes else 0 }} votes</span>
+                                </div>
                             </div>
                         </div>
                         {% endfor %}
@@ -134,24 +83,33 @@
                 </div>
             </div>
 
-            <!-- Recent Answers -->
+            <!-- User's Answers -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="fas fa-reply"></i> Recent Answers</h5>
+                    <h5 class="mb-0"><i class="fas fa-comments"></i> Answers Given</h5>
                 </div>
                 <div class="card-body">
-                    {% if answers %}
-                        {% for answer in answers %}
-                        <div class="answer-item mb-3 pb-3 border-bottom">
-                            <p class="answer-content mb-2">{{ answer.content|truncate(200) }}</p>
-                            <div class="answer-meta text-muted small">
-                                <i class="fas fa-clock"></i> {{ answer.created_at.strftime('%b %d, %Y') }} •
-                                <a href="{{ url_for('question_detail', id=answer.question_id) }}" class="text-decoration-none">
-                                    {{ answer.question.title }}
+                    {% if user_answers %}
+                        {% for answer in user_answers %}
+                        <div class="answer-preview mb-3">
+                            <h6>
+                                <a href="{{ url_for('question_detail', id=answer.question.id) }}" class="text-decoration-none">
+                                    Answer to: {{ answer.question.title }}
                                 </a>
                                 {% if answer.is_accepted %}
-                                <span class="badge bg-success ms-2">Accepted</span>
+                                <span class="badge bg-success ms-2">
+                                    <i class="fas fa-check"></i> Accepted
+                                </span>
                                 {% endif %}
+                            </h6>
+                            <p class="text-muted small">
+                                {{ answer.content|clean_html|truncate(150)|nl2br|safe }}
+                            </p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small class="text-muted">
+                                    <i class="fas fa-calendar"></i> {{ answer.created_at.strftime('%b %d, %Y') }}
+                                </small>
+                                <span class="badge bg-primary">{{ answer.votes|sum(attribute='value') if answer.votes else 0 }} votes</span>
                             </div>
                         </div>
                         {% endfor %}
@@ -159,129 +117,8 @@
                         <p class="text-muted">No answers given yet.</p>
                     {% endif %}
                 </div>
-=======
-        <!-- User's Recent Questions -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h4><i class="fas fa-question-circle"></i> Recent Questions</h4>
-            </div>
-            <div class="card-body">
-                {% if questions %}
-                    {% for question in questions %}
-                    <div class="question-card mb-3">
-                        <div class="card-body">
-                            <h5>
-                                <a href="{{ url_for('question_detail', id=question.id) }}" class="text-decoration-none">
-                                    {{ question.title }}
-                                </a>
-                            </h5>
-                            <p class="text-muted mb-2">
-                                {{ question.content|clean_html|truncate(150)|nl2br|safe }}
-                            </p>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    {% for tag in question.tags %}
-                                    <span class="tag">{{ tag.name }}</span>
-                                    {% endfor %}
-                                </div>
-                                <div class="text-muted">
-                                    <i class="fas fa-clock"></i> {{ question.created_at.strftime('%b %d, %Y') }} • 
-                                    <i class="fas fa-comment"></i> {{ question.answers|length }} answers
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <p class="text-muted">No questions asked yet.</p>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- User's Recent Answers -->
-        <div class="card">
-            <div class="card-header">
-                <h4><i class="fas fa-reply"></i> Recent Answers</h4>
-            </div>
-            <div class="card-body">
-                {% if answers %}
-                    {% for answer in answers %}
-                    <div class="answer-item mb-3 pb-3 {% if not loop.last %}border-bottom{% endif %}">
-                        <div class="answer-content">
-                            <p class="mb-2">
-                                <a href="{{ url_for('question_detail', id=answer.question_id) }}" class="text-decoration-none">
-                                    <strong>Q: {{ answer.question.title }}</strong>
-                                </a>
-                            </p>
-                            <p class="mb-2">{{ answer.content[:200] }}{% if answer.content|length > 200 %}...{% endif %}</p>
-                            {% if answer.is_accepted %}
-                            <span class="badge bg-success">
-                                <i class="fas fa-check"></i> Accepted Answer
-                            </span>
-                            {% endif %}
-                        </div>
-                        <div class="text-muted">
-                            <i class="fas fa-clock"></i> {{ answer.created_at.strftime('%b %d, %Y at %I:%M %p') }}
-                        </div>
-                    </div>
-                    {% endfor %}
-                {% else %}
-                    <p class="text-muted">No answers given yet.</p>
-                {% endif %}
->>>>>>> manojan/main
             </div>
         </div>
     </div>
 </div>
-<<<<<<< HEAD
-=======
-
-<style>
-.user-avatar {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background-color: var(--bg-tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px solid var(--border-color);
-}
-
-.stat-number {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--primary-color);
-    line-height: 1;
-}
-
-.stat-label {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.question-card {
-    border-left: 4px solid var(--primary-color);
-}
-
-.answer-item {
-    border-left: 4px solid var(--secondary-color);
-}
-
-[data-theme="dark"] .user-avatar {
-    background-color: var(--bg-tertiary);
-    border-color: var(--border-color);
-}
-
-[data-theme="dark"] .stat-number {
-    color: var(--primary-color);
-}
-
-[data-theme="dark"] .stat-label {
-    color: var(--text-secondary);
-}
-</style>
->>>>>>> manojan/main
 {% endblock %}
