@@ -40,6 +40,25 @@ def nl2br_filter(text):
         return ''
     return re.sub(r'\r?\n', '<br>', text)
 
+@app.template_filter('clean_html')
+def clean_html_filter(text):
+    """Clean up HTML content from rich text editor"""
+    if text is None:
+        return ''
+    # Remove unnecessary span styles and clean up
+    text = re.sub(r'<span[^>]*style="[^"]*"[^>]*>(.*?)<\/span>', r'\1', text)
+    text = re.sub(r'<p[^>]*style="[^"]*"[^>]*>', '<p>', text)
+    text = re.sub(r'style="[^"]*"', '', text)
+    # Convert paragraphs to plain text with line breaks
+    text = re.sub(r'<p[^>]*>(.*?)<\/p>', r'\1\n\n', text)
+    text = re.sub(r'<br[^>]*>', '\n', text)
+    # Remove any remaining HTML tags
+    text = re.sub(r'<[^>]+>', '', text)
+    # Clean up extra whitespace
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+    text = text.strip()
+    return text
+
 # Models
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -65,8 +84,7 @@ class User(UserMixin, db.Model):
         # Points for questions
         score += len(self.questions) * 5
         
-        # Points for answers
-        score += len(self.answers) * 10
+        # Points for answ        score += len(self.answers) * 10
         
         # Points for accepted answers
         accepted_answers = len([a for a in self.answers if a.is_accepted])
