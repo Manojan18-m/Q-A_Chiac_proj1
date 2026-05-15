@@ -52,7 +52,9 @@
                         <a href="{{ url_for('index') }}" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Cancel
                         </a>
-                        {{ form.submit(class="btn btn-primary") }}
+                        <button type="button" id="post-btn" class="btn btn-primary">
+                            <i class="fas fa-paper-plane"></i> Post Question
+                        </button>
                     </div>
                 </form>
             </div>
@@ -62,6 +64,10 @@
 {% endblock %}
 
 {% block scripts %}
+<!-- Quill Editor CSS and JS -->
+<link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+
 <script>
 // Initialize Quill editor
 var quill = new Quill('#editor', {
@@ -120,6 +126,69 @@ document.getElementById('title').addEventListener('input', function() {
                     suggestionsDiv.appendChild(tagBtn);
                 });
             });
+    }
+});
+
+// Simple button click handler to post question
+document.addEventListener('DOMContentLoaded', function() {
+    const postBtn = document.getElementById('post-btn');
+    console.log('[DEBUG] DOMContentLoaded - post button found:', !!postBtn);
+    
+    if (postBtn) {
+        postBtn.addEventListener('click', function() {
+            console.log('[DEBUG] Post button clicked');
+            
+            const titleField = document.getElementById('title');
+            const tagsField = document.getElementById('tags');
+            const title = titleField ? titleField.value.trim() : '';
+            const content = window.quill ? window.quill.root.innerHTML : '';
+            const tags = tagsField ? tagsField.value : '';
+
+            console.log('[DEBUG] Form data:', { 
+                title: title.substring(0, 50), 
+                contentLen: content.length, 
+                tags 
+            });
+
+            if (!title) {
+                alert('Please enter a title');
+                return;
+            }
+            if (!content.trim() || content === '<p><br></p>') {
+                alert('Please enter content in the editor');
+                return;
+            }
+
+            postBtn.disabled = true;
+            postBtn.textContent = 'Posting...';
+
+            console.log('[DEBUG] Posting to /api/post_question');
+            fetch('/api/post_question', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, content, tags })
+            }).then(r => {
+                console.log('[DEBUG] Response received:', r.status);
+                return r.json();
+            }).then(data => {
+                console.log('[DEBUG] Response data:', data);
+                if (data && data.success && data.url) {
+                    console.log('[DEBUG] Success! Redirecting to:', data.url);
+                    window.location = data.url;
+                } else {
+                    const errorMsg = 'Could not post question: ' + (data.error || 'unknown');
+                    console.log('[DEBUG] Error:', errorMsg);
+                    alert(errorMsg);
+                    postBtn.disabled = false;
+                    postBtn.textContent = 'Post Question';
+                }
+            }).catch(err => {
+                console.error('[DEBUG] Fetch error:', err);
+                alert('Failed to post question. Check console (F12) for details.');
+                postBtn.disabled = false;
+                postBtn.textContent = 'Post Question';
+            });
+        });
     }
 });
 </script>

@@ -34,15 +34,12 @@
 
             <!-- Premium Search Section -->
             <div class="search-container mb-5 slide-up">
-                <form method="POST" action="{{ url_for('search') }}">
-                    {{ search_form.hidden_tag() }}
-                    <div class="position-relative">
-                        {{ search_form.query(class="form-control search-input", placeholder="🔍 Search questions, explore topics, find answers...") }}
-                        <button type="submit" class="search-btn">
-                            <i class="fas fa-search"></i>
-                        </button>
-                    </div>
-                </form>
+                <div class="position-relative">
+                    <input type="text" class="form-control search-input" id="search-query" placeholder="🔍 Search questions, explore topics, find answers..." required>
+                    <button type="button" class="search-btn" id="search-btn">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
             </div>
 
             <!-- Premium Stats Section -->
@@ -359,4 +356,35 @@
     }
 }
 </style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Search form handler
+document.addEventListener('DOMContentLoaded', function() {
+    const searchBtn = document.getElementById('search-btn');
+    const searchQuery = document.getElementById('search-query');
+    
+    if (searchBtn && searchQuery) {
+        // Handle button click
+        searchBtn.addEventListener('click', function() {
+            const query = searchQuery.value.trim();
+            if (query) {
+                // Navigate to search results page with query parameter
+                window.location.href = '/search?q=' + encodeURIComponent(query);
+            }
+        });
+        
+        // Handle Enter key in search field
+        searchQuery.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const query = this.value.trim();
+                if (query) {
+                    window.location.href = '/search?q=' + encodeURIComponent(query);
+                }
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

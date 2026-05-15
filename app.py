@@ -9,8 +9,8 @@ from datetime import datetime
 import os
 import re
 
-# Import AI features
-from ai_features import AIRecommendationEngine, SmartSearchEngine, ContentAnalyzer
+# AI features will be imported dynamically to avoid circular imports
+# from ai_features import AIRecommendationEngine, SmartSearchEngine, ContentAnalyzer
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here-change-in-production')
@@ -263,6 +263,9 @@ def get_ai_engines():
     """Lazy initialization of AI engines"""
     global ai_engine, smart_search, content_analyzer
     try:
+        # Import dynamically to avoid circular imports
+        from ai_features import AIRecommendationEngine, SmartSearchEngine, ContentAnalyzer
+        
         if ai_engine is None:
             ai_engine = AIRecommendationEngine()
         if smart_search is None:
@@ -398,7 +401,17 @@ def ask_question():
         db.session.commit()
         flash('Question posted successfully!', 'success')
         return redirect(url_for('question_detail', id=question.id))
-    
+    else:
+        # If submission failed, log details for debugging
+        if request.method == 'POST':
+            try:
+                print('Ask form submission failed. form.errors=')
+                print(form.errors)
+                print('request.form=')
+                print(request.form.to_dict())
+            except Exception as e:
+                print(f'Error logging ask form failure: {e}')
+
     return render_template('ask_question.html', form=form)
 
 @app.route('/question/<int:id>')
@@ -423,14 +436,26 @@ def question_detail(id):
     # Sort answers: accepted first, then by vote count
     answers_with_votes.sort(key=lambda x: (not x[0].is_accepted, -x[1]))
     
-    # Get AI engines and AI-powered features
+    # Get AI engines and AI-powered features (use safely if unavailable)
     ai_engine, smart_search, content_analyzer = get_ai_engines()
-    
-    # Get AI-powered similar questions
-    similar_questions = ai_engine.get_similar_questions(id, limit=3)
-    
-    # Analyze question quality
-    quality_score = content_analyzer.analyze_question_quality(question)
+
+    # Get AI-powered similar questions (fallback to empty list on failure)
+    similar_questions = []
+    try:
+        if ai_engine:
+            similar_questions = ai_engine.get_similar_questions(id, limit=3) or []
+    except Exception as e:
+        print(f"AI similar questions error: {e}")
+        similar_questions = []
+
+    # Analyze question quality (fallback to None on failure)
+    quality_score = None
+    try:
+        if content_analyzer:
+            quality_score = content_analyzer.analyze_question_quality(question)
+    except Exception as e:
+        print(f"Content analyzer error: {e}")
+        quality_score = None
     
     return render_template('question_detail.html', 
                          question=question, 
@@ -569,13 +594,33 @@ def search():
         
         query = request.args.get('q') or form.query.data
         
-        # Get AI engines and use smart search
+        # Get AI engines and use smart search, otherwise fall back to DB search
         ai_engine, smart_search, content_analyzer = get_ai_engines()
         
-        if current_user.is_authenticated:
-            questions = smart_search.search_questions(query, current_user.id, limit=20)
-        else:
-            questions = smart_search.search_questions(query, limit=20)
+        try:
+            if smart_search:
+                try:
+                    if current_user.is_authenticated:
+                        questions = smart_search.search_questions(query, current_user.id, limit=20)
+                    else:
+                        questions = smart_search.search_questions(query, limit=20)
+                except Exception as e:
+                    print(f"[WARNING] AI search failed: {e}, using fallback")
+            
+            # If no questions from AI search (or AI is disabled), use database fallback
+            if not questions:
+                q_like = f"%{query}%"
+                questions = Question.query.filter(
+                    (Question.title.ilike(q_like)) | (Question.content.ilike(q_like))
+                ).order_by(Question.created_at.desc()).limit(100).all()
+        except Exception as e:
+            print(f"[ERROR] Search error: {e}")
+            import traceback
+            traceback.print_exc()
+            q_like = f"%{query}%"
+            questions = Question.query.filter(
+                (Question.title.ilike(q_like)) | (Question.content.ilike(q_like))
+            ).order_by(Question.created_at.desc()).limit(100).all()
         
         search_time = round((time.time() - start_time) * 1000, 2)  # in milliseconds
         
@@ -701,6 +746,85 @@ def get_notifications():
         'created_at': n.created_at.isoformat()
     } for n in notifications])
 
+
+@app.route('/api/suggest_tags')
+def suggest_tags():
+    """Simple tag suggestion endpoint used by the ask form."""
+    title = request.args.get('title', '')
+    content = request.args.get('content', '')
+
+    # Basic heuristic: find tags whose name appears in title or content
+    suggestions = []
+    try:
+        query = f"%{title}%"
+        # Collect tags matching title or content (case-insensitive)
+        matches = Tag.query.filter((Tag.name.ilike(f"%{title}%")) | (Tag.name.ilike(f"%{content}%"))).limit(10).all()
+        for t in matches:
+            suggestions.append({'name': t.name})
+    except Exception as e:
+        print(f"Tag suggestion error: {e}")
+
+    return jsonify(suggestions)
+
+
+@app.route('/api/stats')
+def api_stats():
+    """Return simple site-wide stats for the frontend."""
+    try:
+        total_questions = Question.query.count()
+        total_answers = Answer.query.count()
+        total_users = User.query.count()
+    except Exception as e:
+        print(f"Stats error: {e}")
+        total_questions = total_answers = total_users = 0
+
+    return jsonify({
+        'questions': total_questions,
+        'answers': total_answers,
+        'users': total_users
+    })
+
+
+@app.route('/api/post_question', methods=['POST'])
+@csrf.exempt
+@login_required
+def api_post_question():
+    """JSON endpoint to post a question (fallback for client issues)."""
+    print(f"[DEBUG] api_post_question called. user={current_user.username}")
+    data = request.get_json() or {}
+    title = data.get('title', '').strip()
+    content = data.get('content', '').strip()
+    tags_raw = data.get('tags', '')
+
+    print(f"[DEBUG] title={title[:50]}, content_len={len(content)}, tags={tags_raw}")
+
+    if not title or not content:
+        print(f"[DEBUG] Validation failed: title={bool(title)}, content={bool(content)}")
+        return jsonify({'success': False, 'error': 'Title and content required'}), 400
+
+    try:
+        question = Question(title=title, content=content, user_id=current_user.id)
+
+        tag_names = [t.strip() for t in tags_raw.split(',') if t.strip()]
+        for tag_name in tag_names:
+            tag = Tag.query.filter_by(name=tag_name).first()
+            if not tag:
+                tag = Tag(name=tag_name)
+                db.session.add(tag)
+            question.tags.append(tag)
+
+        db.session.add(question)
+        db.session.commit()
+
+        print(f"[DEBUG] Question created successfully: id={question.id}")
+        return jsonify({'success': True, 'id': question.id, 'url': url_for('question_detail', id=question.id)})
+    except Exception as e:
+        db.session.rollback()
+        print(f"[ERROR] api_post_question error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': 'Server error'}), 500
+
 @app.route('/api/notifications/<int:notification_id>/read', methods=['POST'])
 @login_required
 def mark_notification_read(notification_id):
@@ -755,7 +879,9 @@ def dashboard():
     
     # Get AI engines and recommended questions
     ai_engine, smart_search, content_analyzer = get_ai_engines()
-    recommended = ai_engine.recommend_questions_for_user(user.id, limit=10)
+    recommended = []
+    if ai_engine:
+        recommended = ai_engine.recommend_questions_for_user(user.id, limit=10)
     
     return render_template('dashboard.html', 
                          user=user, 
